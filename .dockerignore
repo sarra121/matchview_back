@@ -1,0 +1,12 @@
+# Things NOT to copy into the Docker image.
+
+# Local install is built for the host OS (Windows); the container is Linux and
+# must install its own fresh copy via `npm ci`.
+node_modules
+
+# Secrets are injected at run time (docker run --env-file), never baked in.
+.env
+
+# Noise.
+*.log
+dist
