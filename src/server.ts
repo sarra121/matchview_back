@@ -14,7 +14,7 @@ import { loadEnv } from './env.ts'
 const env = loadEnv()
 const storage = createR2Storage(env.r2)
 const objects = createR2ObjectStore(env.r2)
-const app = createApp({ demoSecret: env.demoSecret, storage, objects, partSize: env.partSize })
+const app = createApp({ auth0: env.auth0, storage, objects, partSize: env.partSize })
 
 // hostname '0.0.0.0' = listen on all network addresses, so the server is
 // reachable from outside the container (not just from inside it).

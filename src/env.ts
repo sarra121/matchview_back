@@ -15,8 +15,8 @@ export interface R2Env {
 }
 
 export interface Env {
-  /** Shared secret that gates every route except /health. */
-  demoSecret: string
+  /** Auth0 settings used to verify Bearer tokens (gates every route but /health). */
+  auth0: { domain: string; audience: string }
   /** TCP port the HTTP server listens on. */
   port: number
   /** Cloudflare R2 connection settings. */
@@ -29,9 +29,9 @@ const DEFAULT_PART_SIZE = 100 * 1024 * 1024 // 100 MB
 const MIN_PART_SIZE = 5 * 1024 * 1024 // 5 MB — an S3/R2 rule for multipart uploads
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const demoSecret = source.DEMO_SECRET
-  if (!demoSecret) {
-    throw new Error('DEMO_SECRET is required — copy .env.example to .env and set it.')
+  const auth0 = {
+    domain: required(source, 'AUTH0_DOMAIN'),     // dev-abc123.us.auth0.com
+    audience: required(source, 'AUTH0_AUDIENCE'), // https://matchview-api
   }
 
   const port = Number(source.PORT ?? 8787)
@@ -51,7 +51,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(`PART_SIZE must be an integer of at least ${MIN_PART_SIZE} bytes (5 MB), got: ${source.PART_SIZE}`)
   }
 
-  return { demoSecret, port, r2, partSize }
+  return { auth0, port, r2, partSize }
 }
 
 function required(source: NodeJS.ProcessEnv, name: string): string {

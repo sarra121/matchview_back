@@ -13,6 +13,8 @@
 
 import { Hono } from 'hono'
 import type { ObjectStore } from './storage.ts'
+import { scopeStore } from './scope-store.ts'
+import type { AuthEnv } from './auth.ts'
 
 export interface ProjectsDeps {
   objects: ObjectStore
@@ -28,8 +30,8 @@ interface ProjectMeta {
 const dataKey = (id: string): string => `projects/${id}/project.json`
 const metaKey = (id: string): string => `projects/${id}/meta.json`
 
-export function createProjectsRouter(deps: ProjectsDeps): Hono {
-  const router = new Hono()
+export function createProjectsRouter(deps: ProjectsDeps): Hono<AuthEnv> {
+  const router = new Hono<AuthEnv>()
 
   router.put('/projects/:id', async (c) => {
     const id = c.req.param('id')
@@ -51,18 +53,20 @@ export function createProjectsRouter(deps: ProjectsDeps): Hono {
     }
 
     const meta: ProjectMeta = { id, name, updatedAt }
-    await deps.objects.putJson(dataKey(id), project)
-    await deps.objects.putJson(metaKey(id), meta)
+    const store = scopeStore(deps.objects, c.get('userId'))
+    await store.putJson(dataKey(id), project)
+    await store.putJson(metaKey(id), meta)
     return c.json({ ok: true, id })
   })
 
   router.get('/projects', async (c) => {
-    const keys = await deps.objects.listKeys('projects/')
+    const store = scopeStore(deps.objects, c.get('userId'))
+    const keys = await store.listKeys('projects/')
     const metaKeys = keys.filter((k) => k.endsWith('/meta.json'))
 
     const projects: ProjectMeta[] = []
     for (const k of metaKeys) {
-      const meta = await deps.objects.getJson<ProjectMeta>(k)
+      const meta = await store.getJson<ProjectMeta>(k)
       if (meta) projects.push(meta)
     }
 
@@ -73,7 +77,8 @@ export function createProjectsRouter(deps: ProjectsDeps): Hono {
 
   router.get('/projects/:id', async (c) => {
     const id = c.req.param('id')
-    const project = await deps.objects.getJson(dataKey(id))
+    const store = scopeStore(deps.objects, c.get('userId'))
+    const project = await store.getJson(dataKey(id))
     if (!project) {
       return c.json({ error: 'not found' }, 404)
     }

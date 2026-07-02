@@ -12,12 +12,13 @@ import {
   CreateMultipartUploadCommand,
   UploadPartCommand,
   CompleteMultipartUploadCommand,
+  ListPartsCommand,
   PutObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import type { MultipartStorage, ObjectStore } from './storage.ts'
+import type { MultipartStorage, ObjectStore, UploadedPart } from './storage.ts'
 
 export interface R2Config {
   accountId: string
@@ -70,6 +71,30 @@ export function createR2Storage(cfg: R2Config): MultipartStorage {
       )
     },
 
+    async listParts({ key, uploadId }) {
+      const parts: UploadedPart[] = []
+      // R2 returns at most 1000 parts per call; page through with the marker
+      // (the same pattern as listKeys above) so huge uploads list fully.
+      let marker: string | undefined
+      do {
+        const out = await client.send(
+          new ListPartsCommand({
+            Bucket: cfg.bucket,
+            Key: key,
+            UploadId: uploadId,
+            PartNumberMarker: marker,
+          }),
+        )
+        for (const p of out.Parts ?? []) {
+          if (typeof p.PartNumber === 'number' && p.ETag) {
+            parts.push({ partNumber: p.PartNumber, etag: p.ETag, size: p.Size ?? 0 })
+          }
+        }
+        marker = out.IsTruncated ? out.NextPartNumberMarker : undefined
+      } while (marker)
+      return parts
+    },
+
     async complete({ key, uploadId, parts }) {
       await client.send(
         new CompleteMultipartUploadCommand({
@@ -101,6 +126,7 @@ function isNotFound(err: unknown): boolean {
 
 export function createR2ObjectStore(cfg: R2Config): ObjectStore {
   const client = buildClient(cfg)
+  const expiresIn = cfg.presignExpirySeconds ?? 3600
 
   return {
     async putJson(key, value) {
@@ -141,6 +167,15 @@ export function createR2ObjectStore(cfg: R2Config): ObjectStore {
         token = out.IsTruncated ? out.NextContinuationToken : undefined
       } while (token)
       return keys
+    },
+
+    async presignGet(key) {
+      // Same local-signing trick as presignPart, but for a download: builds a
+      // signed GET URL without sending a request. The browser fetches the bytes
+      // straight from R2; the backend never streams them.
+      return getSignedUrl(client, new GetObjectCommand({ Bucket: cfg.bucket, Key: key }), {
+        expiresIn,
+      })
     },
   }
 }

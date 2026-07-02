@@ -12,12 +12,30 @@ export interface UploadPartRef {
   etag: string
 }
 
+/**
+ * One chunk R2 already holds for an in-progress upload, as reported by
+ * `listParts`. Same shape as UploadPartRef plus the byte size R2 recorded —
+ * handy for a resuming client to double-check a part landed whole.
+ */
+export interface UploadedPart {
+  partNumber: number
+  etag: string
+  size: number
+}
+
 export interface MultipartStorage {
   /** Begin a multipart upload for `key`; returns R2's upload id. */
   start(input: { key: string; contentType: string }): Promise<{ uploadId: string }>
 
   /** Produce a temporary signed URL the browser can PUT one chunk to. */
   presignPart(input: { key: string; uploadId: string; partNumber: number }): Promise<string>
+
+  /**
+   * Ask R2 which chunks it has already received for an in-progress upload.
+   * This is what lets a resumed upload skip the parts that already landed
+   * instead of starting over — R2 is the source of truth, not the browser.
+   */
+  listParts(input: { key: string; uploadId: string }): Promise<UploadedPart[]>
 
   /** Stitch the uploaded chunks into the final object. */
   complete(input: { key: string; uploadId: string; parts: UploadPartRef[] }): Promise<void>
@@ -35,4 +53,10 @@ export interface ObjectStore {
   getJson<T>(key: string): Promise<T | null>
   /** List every key that starts with `prefix`. */
   listKeys(prefix: string): Promise<string[]>
+  /**
+   * Produce a temporary signed URL the browser can GET to download the object
+   * at `key` directly from storage (the read-twin of `presignPart`). Used for
+   * download-on-demand of media bytes on a device that doesn't have them yet.
+   */
+  presignGet(key: string): Promise<string>
 }

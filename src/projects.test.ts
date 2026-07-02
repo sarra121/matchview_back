@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { createApp } from './app.ts'
 import type { MultipartStorage, ObjectStore } from './storage.ts'
 
-const SECRET = 'test-secret'
+/** Test double for auth: accepts one known token, rejects everything else. */
+const fakeVerify = async (token: string) => {
+  if (token !== 'test-token') throw new Error('bad token')
+  return { userId: 'test-user' }
+}
 
 /** Uploads aren't exercised here. */
 const noopStorage: MultipartStorage = {
@@ -11,6 +15,9 @@ const noopStorage: MultipartStorage = {
   },
   async presignPart() {
     return 'https://r2.example/x'
+  },
+  async listParts() {
+    return []
   },
   async complete() {},
 }
@@ -26,14 +33,21 @@ function makeMemoryStore(): ObjectStore {
       return map.has(key) ? (map.get(key) as T) : null
     },
     listKeys: async (prefix) => [...map.keys()].filter((k) => k.startsWith(prefix)),
+    presignGet: async (key) => `https://r2.example/${key}?signed`,
   }
 }
 
 function appWith(objects: ObjectStore) {
-  return createApp({ demoSecret: SECRET, storage: noopStorage, objects, partSize: 100 })
+  return createApp({
+    auth0: { domain: 'test.auth0', audience: 'test' },
+    storage: noopStorage,
+    objects,
+    partSize: 100,
+    verifyToken: fakeVerify,
+  })
 }
 
-const auth = { 'content-type': 'application/json', 'x-demo-secret': SECRET }
+const auth = { 'content-type': 'application/json', authorization: 'Bearer test-token' }
 
 describe('project sync', () => {
   it('stores projects, lists them newest-first, and reads one back', async () => {
